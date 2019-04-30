@@ -1,5 +1,5 @@
 CC = gcc
-STD_CFLAGS = -Wall -Wno-multichar -std=gnu99 -c -g -O1
+STD_CFLAGS = -Wall -Wno-multichar -std=gnu99 -c -O1
 
 # Enable ARM-specific options only on ARM, and compilation of the app only on ARM
 UNAME := $(shell uname -m)
@@ -8,13 +8,13 @@ PCPUI := $(shell cat /proc/cpuinfo | grep Revision | cut -c16-)
 # Determine the hardware platform. Below, pi1 stands for the RaspberryPi 1 (the original one),
 # and pi2 stands for both the RaspberryPi 2 and 3.
 ifeq ($(UNAME), armv6l)
-	CFLAGS = $(STD_CFLAGS) -march=armv6 -mtune=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp -ffast-math -DRASPI=1
+	CFLAGS = $(STD_CFLAGS) -march=armv6zk -mtune=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp -ffast-math -DRASPI=1
 	TARGET = pi1
 else ifeq ($(PCPUI), 11)
 	CFLAGS = $(STD_CFLAGS) -march=armv7-a -mtune=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp -ffast-math -DRASPI=4
 	TARGET = pi4
 else ifeq ($(UNAME), armv7l)
-	CFLAGS = $(STD_CFLAGS) -march=armv7-a -mtune=arm1176jzf-s -mfloat-abi=hard -mfpu=vfp -ffast-math -DRASPI=2
+	CFLAGS = $(STD_CFLAGS) -march=armv7-a -mtune=cortex-a7 -mfloat-abi=hard -mfpu=vfp -ffast-math -DRASPI=2
 	TARGET = pi2
 else
 	CFLAGS = $(STD_CFLAGS)
@@ -44,7 +44,7 @@ waveforms.o: waveforms.c waveforms.h
 mailbox.o: mailbox.c mailbox.h
 	$(CC) $(CFLAGS) mailbox.c
 
-pi_fm_rds.o: pi_fm_adv.c control_pipe.h fm_mpx.h rds.h mailbox.h
+pi_fm_adv.o: pi_fm_adv.c control_pipe.h fm_mpx.h rds.h mailbox.h
 	$(CC) $(CFLAGS) pi_fm_adv.c
 
 rds_wav.o: rds_wav.c
