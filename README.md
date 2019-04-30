@@ -1,6 +1,6 @@
 PiFmAdv
 =========
-
+For a stand-alone FM MPX encoder based on this code, come check out [mpxgen](https://github.com/Anthony96922/mpxgen)
 
 ## FM-RDS transmitter using the Raspberry Pi
 

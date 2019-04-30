@@ -22,9 +22,7 @@
 #include <sndfile.h>
 #include <getopt.h>
 
-#include "rds.h"
 #include "fm_mpx.h"
-#include "control_pipe.h"
 #include "mailbox.h"
 
 #define MBFILE                          DEVICE_FILE_NAME // From mailbox.h
@@ -252,13 +250,11 @@
 #define PAGE_SHIFT                      12
 #define NUM_PAGES                       ((sizeof(struct control_data_s) + PAGE_SIZE - 1) >> PAGE_SHIFT)
 
-#define NUM_SAMPLES                     64000
-#define NUM_CBS                         (NUM_SAMPLES * 2)
+#define NUM_SAMPLES			65536
+#define NUM_CBS				(NUM_SAMPLES * 2)
+#define DATA_SIZE			4096
 
 #define SUBSIZE                         1
-#define DATA_SIZE                       1000
-
-
 
 typedef struct {
     uint32_t info, src, dst, length, stride, next, pad[2];
@@ -315,7 +311,6 @@ static void terminate(int num)
     }
 
     fm_mpx_close();
-    close_control_pipe();
 
     if (mbox.virt_addr != NULL) {
         unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
@@ -376,7 +371,7 @@ static void *map_peripheral(uint32_t base, uint32_t len)
 
 
 
-int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t pi, char *ps, char *rt, int *af_array, float ppm, float deviation, float mpx, int cutoff, int preemphasis_cutoff, char *control_pipe, int pty, int tp, int power, int gpio, int wait, int srate, int nochan) {
+int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float deviation, int power, int gpio, int wait, int sample_rate, int num_chans) {
 	// Catch only important signals
 	for (int i = 0; i < 25; i++) {
 		struct sigaction sa;
@@ -418,7 +413,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 
 	clk_reg[CM_PLLA] = 0x5A00022A; // Enable PLLA_PER
 	udelay(100);
-	
+
 	int ana[4];
 	for (int i = 3; i >= 0; i--)
 	{
@@ -436,9 +431,8 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 	clk_reg[PLLA_PER] = 0x5A000001; // Div
 	udelay(100);
 
-
 	// Adjust PLLA frequency
-	freq_ctl = (unsigned int)(((carrier_freq*divider)/CLOCK_BASE*((double)(1<<20))));
+	freq_ctl = (unsigned int)(((carrier_freq*divider)/CLOCK_BASE*((float)(1<<20))));
 	clk_reg[PLLA_CTRL] = (0x5a<<24) | (0x21<<12) | (freq_ctl>>20); // Integer part
 	freq_ctl&=0xFFFFF;
 	clk_reg[PLLA_FRAC] = (0x5a<<24) | (freq_ctl&0xFFFFC); // Fractional part
@@ -468,12 +462,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 
 	int reg = gpio / 10;
 	int shift = (gpio % 10) * 3;
-	int mode;
-	if(gpio == 20) {
-		mode = 2;
-	} else {
-		mode = 4;
-	}
+	int mode = (gpio == 20) ? 2 : 4;
 
 	// GPIO needs to be ALT FUNC 0 to output the clock
 	gpio_reg[reg] = (gpio_reg[reg] & ~(7 << shift)) | (mode << shift);
@@ -505,7 +494,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 	cbp->next = mem_virt_to_phys(mbox.virt_addr);
 
 	// Here we define the rate at which we want to update the GPCLK control register
-	double srdivider = (((double)carrier_freq*divider/1e3)/(2*228*(1.+ppm/1.e6)));
+	float srdivider = (((float)carrier_freq*divider/1e3)/(2*192*(1.+ppm/1.e6)));
 	uint32_t idivider = (uint32_t)srdivider;
 	uint32_t fdivider = (uint32_t)((srdivider - idivider)*pow(2, 12));
 
@@ -541,65 +530,25 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 	uint32_t last_cb = (uint32_t)ctl->cb;
 
 	// Data structures for baseband data
-	double data[DATA_SIZE];
-	double rds_buffer[DATA_SIZE];
+	float data[DATA_SIZE];
 	int data_len = 0;
 	int data_index = 0;
 
 	// Initialize the baseband generator
-	if(fm_mpx_open(audio_file, DATA_SIZE, cutoff, preemphasis_cutoff, srate, nochan) < 0) return 1;
-
-	// Initialize the RDS modulator
-	set_rds_pi(pi);
-	set_rds_ps(ps);
-	set_rds_rt(rt);
-	set_rds_pty(pty);
-	set_rds_tp(tp);
-	set_rds_ms(1);
-	set_rds_ab(0);
-
-	printf("RDS Options:\n");
-
-	if(rds) {
-		printf("RDS: %i, ", rds);
-		printf("PI: %04X, PS: \"%s\", PTY: %i\n", pi, ps, pty);
-		printf("RT: \"%s\"\n", rt);
-		if(af_array[0]) {
-			set_rds_af(af_array);
-			printf("AF: ");
-			int f;
-			for(f = 1; f < af_array[0]+1; f++) {
-				printf("%f Mhz ", (float)(af_array[f]+875)/10);
-			}
-			printf("\n");
-		}
-	}
-	else {
-		printf("RDS: %i\n", rds);
-	}
-
-	// Initialize the control pipe reader
-	if(control_pipe) {
-		if(open_control_pipe(control_pipe) == 0) {
-			printf("Reading control commands on %s.\n", control_pipe);
-		} else {
-			printf("Failed to open control pipe: %s.\n", control_pipe);
-			control_pipe = NULL;
-		}
-	}
+	if(fm_mpx_open(audio_file, DATA_SIZE, wait, sample_rate, num_chans) < 0) return 1;
 
 	printf("Starting to transmit on %3.1f MHz.\n", carrier_freq/1e6);
 
-	double deviation_scale_factor =  0.1 * (divider*(deviation*1000)/(CLOCK_BASE/((double)(1<<20))));
+	float deviation_scale_factor = (divider*(deviation*1000)/(CLOCK_BASE/((float)(1<<20))));
+	uint32_t cur_cb = 0;
+	int last_sample = 0, this_sample = 0, free_slots = 0;
+	float dval;
 
 	for (;;) {
-
-		if(control_pipe) poll_control_pipe();
-
-		uint32_t cur_cb = (int)mem_phys_to_virt(dma_reg[DMA_CONBLK_AD]);
-		int last_sample = (last_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
-		int this_sample = (cur_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
-		int free_slots = this_sample - last_sample;
+		cur_cb = (int)mem_phys_to_virt(dma_reg[DMA_CONBLK_AD]);
+		last_sample = (last_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
+		this_sample = (cur_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
+		free_slots = this_sample - last_sample;
 
 		if (free_slots < 0)
 			free_slots += NUM_SAMPLES;
@@ -607,14 +556,14 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 		while (free_slots >= SUBSIZE) {
 			// Get more baseband samples if necessary
 			if(data_len == 0) {
-				if(fm_mpx_get_samples(data, rds_buffer, mpx, rds, wait) < 0 ) {
+				if(fm_mpx_get_samples(data) < 0 ) {
 					return 0;
 				}
 				data_len = DATA_SIZE;
 				data_index = 0;
 			}
 
-			double dval = data[data_index]*deviation_scale_factor;
+			dval = data[data_index]*deviation_scale_factor;
 			//int intval = ((int)(dval)); //((int)((dval)) & ~0x3);
 			data_index++;
 			data_len--;
@@ -634,56 +583,31 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 }
 
 int main(int argc, char **argv) {
-	int opt;
-
+	int opt = 0;
 	char *audio_file = NULL;
-	char *control_pipe = NULL;
 	uint32_t carrier_freq = 87600000;
-    	int rds = 1;
-	int alternative_freq[100] = {};
-	int af_size = 0;
-	char *ps = "PiFmAdv";
-	char *rt = "PiFmAdv: Advanced FM transmitter for the Raspberry Pi";
-	uint16_t pi = 0x1234;
 	float ppm = 0;
-	float deviation = 50;
-	int cutoff = 15000;
-	int preemphasis_cutoff = 3185;
-	int pty = 15;
-	int tp = 1;
+	float deviation = 75;
 	int divc = 0;
-	int power = 7;
+	int power = 0;
 	int gpio = 4;
-	float mpx = 40;
 	int wait = 1;
-	int srate = 0;
-	int nochan = 0;
+	int sample_rate = 0;
+	int num_chans = 0;
 
-	const char    	*short_opt = "a:f:d:p:c:P:D:m:w:W:C:h";
+	const char    	*short_opt = "a:f:d:p:D:w:g:W:S:N:h";
 	struct option   long_opt[] =
 	{
 		{"audio", 	required_argument, NULL, 'a'},
 		{"freq", 	required_argument, NULL, 'f'},
 		{"dev", 	required_argument, NULL, 'd'},
 		{"ppm", 	required_argument, NULL, 'p'},
-		{"cutoff", 	required_argument, NULL, 'c'},
-		{"preemph", 	required_argument, NULL, 'P'},
 		{"div", 	required_argument, NULL, 'D'},
-		{"mpx", 	required_argument, NULL, 'm'},
 		{"power", 	required_argument, NULL, 'w'},
 		{"gpio",	required_argument, NULL, 'g'},
 		{"wait",	required_argument, NULL, 'W'},
 		{"srate",	required_argument, NULL, 'S'},
 		{"nochan",	required_argument, NULL, 'N'},
-
-		{"rds", 	required_argument, NULL, 'rds'},
-		{"pi", 		required_argument, NULL, 'pi'},
-		{"ps", 		required_argument, NULL, 'ps'},
-		{"rt", 		required_argument, NULL, 'rt'},
-		{"pty", 	required_argument, NULL, 'pty'},
-		{"tp",		required_argument, NULL, 'tp'},
-		{"af", 		required_argument, NULL, 'af'},
-		{"ctl", 	required_argument, NULL, 'C'},
 
 		{"help",	no_argument, NULL, 'h'},
 		{ 0, 		0, 		   0,    0 }
@@ -693,10 +617,6 @@ int main(int argc, char **argv) {
 	{
 		switch(opt)
 		{
-			case -1:
-			case 0:
-			break;
-
 			case 'a': //audio
 				audio_file = optarg;
 				break;
@@ -715,27 +635,8 @@ int main(int argc, char **argv) {
 				ppm = atof(optarg);
 				break;
 
-			case 'c': //cutoff
-				cutoff = atoi(optarg);
-				break;
-
-			case 'P': //preemph
-				if(strcmp("eu", optarg)==0) {
-					preemphasis_cutoff = 3185;
-				} else if(strcmp("us", optarg)==0) {
-					preemphasis_cutoff = 2120;
-				}
-				else {
-					preemphasis_cutoff = atoi(optarg);
-				}
-				break;
-
 			case 'D': //div
 				divc = atoi(optarg);
-				break;
-
-			case 'm': //mpx
-				mpx = atof(optarg);
 				break;
 
 			case 'w': //power
@@ -751,59 +652,23 @@ int main(int argc, char **argv) {
                                 break;
 
 			case 'W': //wait
-                                wait = atoi(optarg);
-                                break;
+				wait = atoi(optarg);
+				break;
 
 			case 'S': //sample rate
-				srate = atoi(optarg);
+				sample_rate = atoi(optarg);
 				break;
 
 			case 'N': //number of channels
-				nochan = atoi(optarg);
-				break;
-
-			case 'rds': //rds
-				rds = atoi(optarg);
-				break;
-
-			case 'pi': //pi
-				pi = (uint16_t) strtol(optarg, NULL, 16);
-				break;
-
-			case 'ps': //ps
-				ps = optarg;
-				break;
-
-			case 'rt': //rt
-				rt = optarg;
-				break;
-
-			case 'pty': //pty
-				pty = atoi(optarg);
-				break;
-
-			case 'tp': //tp
-                                tp = atoi(optarg);
-                                break;
-
-			case 'af': //af
-				af_size++;
-				alternative_freq[af_size] = (int)(10*atof(optarg))-875;
-				if(alternative_freq[af_size] < 1 || alternative_freq[af_size] > 204)
-					fatal("Alternative Frequency has to be set in range of 87.6 Mhz - 107.9 Mhz\n");
-				break;
-
-			case 'C': //ctl
-				control_pipe = optarg;
+				num_chans = atoi(optarg);
 				break;
 
 			case 'h': //help
 				fatal("Help:\n"
-				      "Syntax: pi_fm_adv [--audio (-a) file] [--freq (-f) frequency] [--dev (-d) deviation] [--ppm (-p) ppm-error]\n"
-				      "                  [--cutoff (-c) cutoff-freq] [--preemph (-P) preemphasis] [--div (-D) divider] \n"
-				      "                  [--mpx (-m) mpx-power] [--power (-w) output-power] [--gpio (-g) gpio-pin] [--wait (-W) wait-switch]\n"
-				      "                  [--rds rds-switch] [--pi pi-code] [--ps ps-text] [--rt radiotext] [--tp traffic-program]\n"
-				      "                  [--pty program-type] [--af alternative-freq] [--ctl (-C) control-pipe]\n");
+				      "Syntax: pi_fm_adv [--audio (-a) file] [--freq (-f) frequency] [--dev (-d) deviation]\n"
+				      "                  [--ppm (-p) ppm-error] [--div (-D) divider] [--power (-w) output-power]\n"
+				      "                  [--gpio (-g) gpio-pin] [--wait (-W) wait-switch] [--srate (-S) sample rate]\n"
+				      "                  [--nochan (N) number of channels]\n");
 
 				break;
 
@@ -818,21 +683,23 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	alternative_freq[0] = af_size;
+	if (audio_file == NULL) {
+		fatal("No audio specified.\n");
+	}
 
-	double xtal_freq_recip=1.0/CLOCK_BASE;
-	int divider, best_divider = 0;
-	int min_int_multiplier, max_int_multiplier;
-	int int_multiplier;
-	double frac_multiplier;
-	int fom, best_fom = 0;
+	float xtal_freq_recip=1.0/CLOCK_BASE;
+	int divider = 0, best_divider = 0;
+	int min_int_multiplier = 0, max_int_multiplier = 0;
+	int int_multiplier = 0;
+	float frac_multiplier;
+	int fom = 0, best_fom = 0;
 	int solution_count = 0;
 	for(divider = 2; divider < 50; divider += 1)
 	{
 		if(carrier_freq * divider > 1400e6) break;
 
-		max_int_multiplier=((int)((double)(carrier_freq + 10 + (deviation * 1000)) * divider * xtal_freq_recip));
-		min_int_multiplier=((int)((double)(carrier_freq - 10 - (deviation * 1000)) * divider * xtal_freq_recip));
+		max_int_multiplier=((int)((float)(carrier_freq + 10 + (deviation * 1000)) * divider * xtal_freq_recip));
+		min_int_multiplier=((int)((float)(carrier_freq - 10 - (deviation * 1000)) * divider * xtal_freq_recip));
 		if(min_int_multiplier != max_int_multiplier) continue;
 
 		solution_count++;
@@ -844,7 +711,7 @@ int main(int argc, char **argv) {
 		if(carrier_freq * divider >  800e6) fom++;
 		if(carrier_freq * divider < 1200e6) fom++;
 
-		frac_multiplier = ((double)(carrier_freq) * divider * xtal_freq_recip);
+		frac_multiplier = ((float)(carrier_freq) * divider * xtal_freq_recip);
 		int_multiplier = (int)frac_multiplier;
 		frac_multiplier = frac_multiplier - int_multiplier;
 		if((frac_multiplier > 0.2) && (frac_multiplier < 0.8)) fom++; // Prefer mulipliers away from integer boundaries
@@ -860,12 +727,12 @@ int main(int argc, char **argv) {
 		best_divider = divc;
 	}
 	else if(!solution_count & !best_divider) {
-		fatal("No tuning solution found. You can specify the divider manually by setting the -div parameter.\n");
+		fatal("No tuning solution found. You can specify the divider manually by setting the --div parameter.\n");
 	}
 
-	printf("Carrier: %3.2f Mhz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (double)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
-	
-	int errcode = tx(carrier_freq, best_divider, audio_file, rds, pi, ps, rt, alternative_freq, ppm, deviation, mpx, cutoff, preemphasis_cutoff, control_pipe, pty, tp, power, gpio, wait, srate, nochan);
+	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (float)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
+
+	int errcode = tx(carrier_freq, best_divider, audio_file, ppm, deviation, power, gpio, wait, sample_rate, num_chans);
 
 	terminate(errcode);
 }
