@@ -102,8 +102,6 @@ int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_cor
 		last_buffer_val = (double*) malloc(sizeof(double)*channels);
 		for(int i=0; i<channels; i++) last_buffer_val[i] = 0;
 
-		printf("Created preemphasis with cutoff at %.1i Hz\n", preemphasis_corner_freq);
-
 		// Create the low-pass FIR filter
 		if(in_samplerate < cutoff_freq) cutoff_freq = in_samplerate;
 		// Here we divide this coefficient by two because it will be counted twice
@@ -161,7 +159,6 @@ int fm_mpx_get_samples(double *mpx_buffer, double *rds_buffer, float mpx, int rd
 							}
 						}
 					} else {
-						//apply preemphasis
 						int k;
 						int l;
 						for(k=0; k<audio_len; k+=channels) {
