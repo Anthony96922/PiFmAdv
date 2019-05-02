@@ -41,6 +41,8 @@ int fir_index = 0;
 int channels;
 
 double *last_buffer_val;
+double preemphasis_prewarp;
+double preemphasis_coefficient;
 
 SNDFILE *inf;
 
@@ -99,8 +101,13 @@ int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_cor
 			printf("1 channel, monophonic operation.\n");
 		}
 
+		// Create the preemphasis
 		last_buffer_val = (double*) malloc(sizeof(double)*channels);
 		for(int i=0; i<channels; i++) last_buffer_val[i] = 0;
+
+		preemphasis_prewarp = tan(PI*preemphasis_corner_freq/in_samplerate);
+		preemphasis_coefficient = (1.0 + (1.0 - preemphasis_prewarp)/(1.0 + preemphasis_prewarp))/2.0;
+		printf("Created preemphasis with cutoff at %.1i Hz\n", preemphasis_corner_freq);
 
 		// Create the low-pass FIR filter
 		if(in_samplerate < cutoff_freq) cutoff_freq = in_samplerate;
@@ -159,11 +166,16 @@ int fm_mpx_get_samples(double *mpx_buffer, double *rds_buffer, float mpx, int rd
 							}
 						}
 					} else {
+						//apply preemphasis
 						int k;
 						int l;
+						double tmp;
 						for(k=0; k<audio_len; k+=channels) {
-							for(l=0; l<channels; l++)
-								last_buffer_val[l] = audio_buffer[k+l];
+							for(l=0; l<channels; l++) {
+								tmp = audio_buffer[k+l];
+								audio_buffer[k+l] = audio_buffer[k+l] - preemphasis_coefficient*last_buffer_val[l];
+								last_buffer_val[l] = tmp;
+							}
 						}
 
 						break;
