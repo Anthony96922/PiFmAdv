@@ -54,7 +54,7 @@ int poll_control_pipe() {
         if(arg[strlen(arg)-1] == '\n') arg[strlen(arg)-1] = 0;
         if(res[0] == 'P' && res[1] == 'S') {
             arg[8] = 0;
-            set_rds_ps(arg);
+            set_rds_ps_dynamic(arg);
             printf("PS set to: \"%s\"\n", arg);
             return CONTROL_PIPE_PS_SET;
         }

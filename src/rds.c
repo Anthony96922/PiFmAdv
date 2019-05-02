@@ -22,6 +22,8 @@ struct {
     int ms;
     int ab;
     char ps[8];
+    char ps_dynamic[8];
+    int ps_update;
     char rt[64];
     int af[100];
 } rds_params = { 0 };
@@ -117,7 +119,7 @@ void get_rds_group(int *buffer) {
             blocks[1] = 0x0000 | rds_params.tp << 10 | rds_params.pty << 5 | rds_params.ta << 4 | rds_params.ms << 3 | ps_state;
 	    if(ps_state == 3) blocks[1] |= 0x0004; // DI = 1 - Stereo
             if(rds_params.af[0]) { // AF
-		if(af_state == 0) { 
+		if(af_state == 0) {
 			blocks[2] = (rds_params.af[0] + 224) << 8 | rds_params.af[1];
 		} else {
 			if(rds_params.af[af_state+1]) {
@@ -131,7 +133,13 @@ void get_rds_group(int *buffer) {
             }
             blocks[3] = rds_params.ps[ps_state*2] << 8 | rds_params.ps[ps_state*2+1];
             ps_state++;
-            if(ps_state >= 4) ps_state = 0;
+            if (ps_state == 4) {
+		ps_state = 0;
+		if (rds_params.ps_update) {
+		    strncpy(rds_params.ps, rds_params.ps_dynamic, 8);
+		    rds_params.ps_update = 0;
+		}
+           }
         } else { // Type 2A groups
             blocks[1] = 0x2000 | rds_params.tp << 10 | rds_params.pty << 5 | rds_params.ab << 4 | rt_state;
             blocks[2] = rds_params.rt[rt_state*4+0] << 8 | rds_params.rt[rt_state*4+1];
@@ -248,6 +256,13 @@ void set_rds_ps(char *ps) {
     for(int i=0; i<8; i++) {
         if(rds_params.ps[i] == 0) rds_params.ps[i] = 32;
     }
+}
+
+void set_rds_ps_dynamic(char *ps) {
+    strncpy(rds_params.ps_dynamic, ps, 8);
+    for(int i=0; i<8; i++)
+       if(rds_params.ps_dynamic[i] == 0) rds_params.ps_dynamic[i] = 32;
+    rds_params.ps_update = 1;
 }
 
 void set_rds_af(int *af_array) {
