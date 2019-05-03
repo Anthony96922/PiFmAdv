@@ -60,7 +60,7 @@ int poll_control_pipe() {
         }
         if(res[0] == 'R' && res[1] == 'T') {
             arg[64] = 0;
-            set_rds_rt(arg);
+            set_rds_rt_dynamic(arg);
             printf("RT set to: \"%s\"\n", arg);
             return CONTROL_PIPE_RT_SET;
         }

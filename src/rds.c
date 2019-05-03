@@ -25,6 +25,8 @@ struct {
     char ps_dynamic[8];
     int ps_update;
     char rt[64];
+    char rt_dynamic[64];
+    int rt_update;
     int af[100];
 } rds_params = { 0 };
 /* Here, the first member of the struct must be a scalar to avoid a
@@ -87,7 +89,7 @@ int get_rds_ct_group(uint16_t *blocks) {
                   (int)((utc->tm_year - l) * 365.25) +
                   (int)((utc->tm_mon + 2 + l*12) * 30.6001);
 
-        blocks[1] = 0x4400 | (mjd>>15);
+        blocks[1] |= 0x4400 | (mjd>>15);
         blocks[2] = (mjd<<1) | (utc->tm_hour>>4);
         blocks[3] = (utc->tm_hour & 0xF)<<12 | utc->tm_min<<6;
 
@@ -116,7 +118,7 @@ void get_rds_group(int *buffer) {
 
     // Generate block content
     if(!get_rds_ct_group(blocks)) { // CT (clock time) has priority on other group types
-        switch(state) {
+	switch(state) {
 	case 0:
 	case 2:
 	case 4:
@@ -144,8 +146,8 @@ void get_rds_group(int *buffer) {
 		    strncpy(rds_params.ps, rds_params.ps_dynamic, 8);
 		    rds_params.ps_update = 0;
 		}
-           }
-	   break;
+            }
+	    break;
 	case 1:
 	case 3:
 	case 5:
@@ -154,7 +156,13 @@ void get_rds_group(int *buffer) {
             blocks[2] = rds_params.rt[rt_state*4+0] << 8 | rds_params.rt[rt_state*4+1];
             blocks[3] = rds_params.rt[rt_state*4+2] << 8 | rds_params.rt[rt_state*4+3];
             rt_state++;
-            if(rt_state >= 16) rt_state = 0;
+            if (rds_params.rt_update) {
+		strncpy(rds_params.rt, rds_params.rt_dynamic, 64);
+		rds_params.ab ^= 1;
+		rds_params.rt_update = 0;
+		rt_state = 0;
+	    }
+	    if(rt_state == 16 || blocks[2] == 0x2020 || blocks[3] == 0x2020) rt_state = 0;
 	    break;
 	}
 
@@ -261,6 +269,14 @@ void set_rds_rt(char *rt) {
     }
 }
 
+void set_rds_rt_dynamic(char *rt) {
+    strncpy(rds_params.rt_dynamic, rt, 64);
+    for(int i=0; i<64; i++) {
+        if(rds_params.rt_dynamic[i] == 0) rds_params.rt_dynamic[i] = 32;
+    }
+    rds_params.rt_update = 1;
+}
+
 void set_rds_ps(char *ps) {
     strncpy(rds_params.ps, ps, 8);
     for(int i=0; i<8; i++) {
@@ -276,29 +292,28 @@ void set_rds_ps_dynamic(char *ps) {
 }
 
 void set_rds_af(int *af_array) {
-	rds_params.af[0] = af_array[0];
-	int f;
-	for(f = 1; f < af_array[0]+1; f++) {
-		rds_params.af[f] = af_array[f];
-	}
+    rds_params.af[0] = af_array[0];
+    for(int f=1; f < af_array[0]+1; f++) {
+        rds_params.af[f] = af_array[f];
+    }
 }
 
 void set_rds_pty(int pty) {
-	rds_params.pty = pty;
+    rds_params.pty = pty;
 }
 
 void set_rds_ta(int ta) {
-	rds_params.ta = ta;
+    rds_params.ta = ta;
 }
 
 void set_rds_tp(int tp) {
-	rds_params.tp = tp;
+    rds_params.tp = tp;
 }
 
 void set_rds_ms(int ms) {
-	rds_params.ms = ms;
+    rds_params.ms = ms;
 }
 
 void set_rds_ab(int ab) {
-	rds_params.ab = ab;
+    rds_params.ab = ab;
 }
