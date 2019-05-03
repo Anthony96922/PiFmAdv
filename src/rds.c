@@ -101,7 +101,7 @@ int get_rds_ct_group(uint16_t *blocks) {
     } else return 0;
 }
 
-/* Creates an RDS group. This generates sequences of the form 0A, 0A, 0A, 0A, 2A, 2A, etc.
+/* Creates an RDS group. This generates sequences of the form 0A, 2A, 0A, 2A, 0A, 2A, 0A, 2A, etc.
    The pattern is of length 8, the variable 'state' keeps track of where we are in the
    pattern. 'ps_state' and 'rt_state' keep track of where we are in the PS (0A) sequence
    or RT (2A) sequence, respectively.
@@ -112,11 +112,16 @@ void get_rds_group(int *buffer) {
     static int rt_state = 0;
     static int af_state = 0;
     uint16_t blocks[GROUP_LENGTH] = {rds_params.pi, 0, 0, 0};
+    blocks[1] = rds_params.tp << 10 | rds_params.pty << 5;
 
     // Generate block content
-    if(! get_rds_ct_group(blocks)) { // CT (clock time) has priority on other group types
-        if(state < 4) { // Type 0A groups
-            blocks[1] = 0x0000 | rds_params.tp << 10 | rds_params.pty << 5 | rds_params.ta << 4 | rds_params.ms << 3 | ps_state;
+    if(!get_rds_ct_group(blocks)) { // CT (clock time) has priority on other group types
+        switch(state) {
+	case 0:
+	case 2:
+	case 4:
+	case 6: // Type 0A groups
+            blocks[1] |= 0x0000 | rds_params.ta << 4 | rds_params.ms << 3 | ps_state;
 	    if(ps_state == 3) blocks[1] |= 0x0004; // DI = 1 - Stereo
             if(rds_params.af[0]) { // AF
 		if(af_state == 0) {
@@ -140,16 +145,21 @@ void get_rds_group(int *buffer) {
 		    rds_params.ps_update = 0;
 		}
            }
-        } else { // Type 2A groups
-            blocks[1] = 0x2000 | rds_params.tp << 10 | rds_params.pty << 5 | rds_params.ab << 4 | rt_state;
+	   break;
+	case 1:
+	case 3:
+	case 5:
+	case 7: // Type 2A groups
+            blocks[1] |= 0x2000 | rds_params.ab << 4 | rt_state;
             blocks[2] = rds_params.rt[rt_state*4+0] << 8 | rds_params.rt[rt_state*4+1];
             blocks[3] = rds_params.rt[rt_state*4+2] << 8 | rds_params.rt[rt_state*4+3];
             rt_state++;
             if(rt_state >= 16) rt_state = 0;
-        }
+	    break;
+	}
 
         state++;
-        if(state >= 6) state = 0;
+        if(state >= 8) state = 0;
     }
 
     // Calculate the checkword for each block and emit the bits
@@ -261,7 +271,7 @@ void set_rds_ps(char *ps) {
 void set_rds_ps_dynamic(char *ps) {
     strncpy(rds_params.ps_dynamic, ps, 8);
     for(int i=0; i<8; i++)
-       if(rds_params.ps_dynamic[i] == 0) rds_params.ps_dynamic[i] = 32;
+        if(rds_params.ps_dynamic[i] == 0) rds_params.ps_dynamic[i] = 32;
     rds_params.ps_update = 1;
 }
 
