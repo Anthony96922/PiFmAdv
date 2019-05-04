@@ -28,6 +28,15 @@ struct {
     char rt_dynamic[64];
     int rt_update;
     int af[100];
+    // RT+
+    int rt_p_toggle;
+    int rt_p_running;
+    int rt_p_type_1;
+    int rt_p_start_1;
+    int rt_p_len_1;
+    int rt_p_type_2;
+    int rt_p_start_2;
+    int rt_p_len_2;
 } rds_params = { 0 };
 /* Here, the first member of the struct must be a scalar to avoid a
    warning on -Wmissing-braces with GCC < 4.8.3
@@ -164,10 +173,24 @@ void get_rds_group(int *buffer) {
 	    }
 	    if(rt_state == 16 || blocks[2] == 0x2020 || blocks[3] == 0x2020) rt_state = 0;
 	    break;
+	case 8: // Type 3A groups
+	    // Assign the RT+ AID to group 11A
+	    blocks[1] |= 0x3000 | 0x0B << 1 | 0;
+	    blocks[3] = 0x4BD7; // RT+ AID
+	    break;
+	case 9: // Type 11A groups
+	    // RT+ block format
+	    blocks[1] |= 0xB000 | rds_params.rt_p_toggle << 4 | rds_params.rt_p_running << 3 |
+			(rds_params.rt_p_type_1 & 0x38) >> 3;
+	    blocks[2] = (rds_params.rt_p_type_1 & 0x7) << 13 | (rds_params.rt_p_start_1 & 0x3F) << 7 |
+			(rds_params.rt_p_len_1 & 0x3F) << 1 | (rds_params.rt_p_type_2 & 0x80);
+	    blocks[3] = (rds_params.rt_p_type_2 & 0xF) << 11 | (rds_params.rt_p_start_2 & 0x3F) << 5 |
+			(rds_params.rt_p_len_2 & 0x1F);
+	    break;
 	}
 
         state++;
-        if(state >= 8) state = 0;
+        if(state == 10) state = 0;
     }
 
     // Calculate the checkword for each block and emit the bits
@@ -291,9 +314,29 @@ void set_rds_ps_dynamic(char *ps) {
     rds_params.ps_update = 1;
 }
 
+void set_rds_rtp_flags(int rt_p_toggle, int rt_p_running) {
+    rds_params.rt_p_toggle = rt_p_toggle;
+    rds_params.rt_p_running = rt_p_running;
+}
+
+void set_rds_rtp_tags(int tag, int type, int start, int len) {
+    switch (tag) {
+    case 1:
+        rds_params.rt_p_type_1 = type;
+        rds_params.rt_p_start_1 = start;
+        rds_params.rt_p_len_1 = len;
+        break;
+    case 2:
+        rds_params.rt_p_type_2 = type;
+        rds_params.rt_p_start_2 = start;
+        rds_params.rt_p_len_2 = len;
+        break;
+    }
+}
+
 void set_rds_af(int *af_array) {
     rds_params.af[0] = af_array[0];
-    for(int f=1; f < af_array[0]+1; f++) {
+    for(int f=1; f<af_array[0]+1; f++) {
         rds_params.af[f] = af_array[f];
     }
 }
