@@ -115,14 +115,13 @@ int poll_control_pipe() {
         if (res[0] == 'R' && res[1] == 'T' && res[2] == 'P') {
             int tag, type, start, len;
             if (sscanf(arg, "%d %d %d %d", &tag, &type, &start, &len)) {
-                if (tag != 1 && tag != 2) tag = 1;
                 if (type > 63) type = 0;
-                if (start < 1 && start > 64) start = 1;
-                if (len > 64) len = 0;
+                if (start < 1 || start > 64) start = 1;
+                if (len > 64) len = 1;
                 printf("RT+ tags: tag: %d, type: %d, start: %d, length: %d\n", tag, type, start, len);
                 set_rds_rtp_tags(tag, type, start, len);
             } else {
-                printf("Could not parse RT+ tag info.");
+                printf("Could not parse RT+ tag info.\n");
             }
             return CONTROL_PIPE_RTP_SET;
         }
