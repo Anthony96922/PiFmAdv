@@ -376,7 +376,11 @@ static void *map_peripheral(uint32_t base, uint32_t len)
 
 
 
-int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t pi, char *ps, char *rt, int *af_array, float ppm, float deviation, float mpx, int cutoff, int preemphasis_cutoff, char *control_pipe, int pty, int tp, int power, int gpio, int wait, int srate, int nochan) {
+int tx(uint32_t carrier_freq, int divider, char *audio_file,
+	int rds, uint16_t pi, char *ps, char *rt, int *af_array,
+	float ppm, float deviation, float mpx, int cutoff, int preemphasis_cutoff,
+	char *control_pipe, int pty, int tp, char *ptyn, int power, int gpio, int wait,
+	int srate, int nochan) {
 	// Catch only important signals
 	for (int i = 0; i < 25; i++) {
 		struct sigaction sa;
@@ -557,6 +561,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 	set_rds_tp(tp);
 	set_rds_ms(1);
 	set_rds_ab(0);
+	set_rds_ptyn(ptyn);
 
 	printf("RDS Options:\n");
 
@@ -569,7 +574,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 			printf("AF: ");
 			int f;
 			for(f = 1; f < af_array[0]+1; f++) {
-				printf("%f Mhz ", (float)(af_array[f]+875)/10);
+				printf("%f MHz ", (float)(af_array[f]+875)/10);
 			}
 			printf("\n");
 		}
@@ -627,7 +632,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, int rds, uint16_t p
 		}
 		last_cb = (uint32_t)mbox.virt_addr + last_sample * sizeof(dma_cb_t) * 2;
 
-		usleep(5000);
+		usleep(500);
 	}
 
 	return 0;
@@ -644,13 +649,14 @@ int main(int argc, char **argv) {
 	int af_size = 0;
 	char *ps = "PiFmAdv";
 	char *rt = "PiFmAdv: Advanced FM transmitter for the Raspberry Pi";
+	char *ptyn = 0;
 	uint16_t pi = 0x1234;
 	float ppm = 0;
 	float deviation = 50;
 	int cutoff = 15000;
 	int preemphasis_cutoff = 3185;
 	int pty = 15;
-	int tp = 1;
+	int tp = 0;
 	int divc = 0;
 	int power = 7;
 	int gpio = 4;
@@ -681,6 +687,7 @@ int main(int argc, char **argv) {
 		{"ps", 		required_argument, NULL, 'ps'},
 		{"rt", 		required_argument, NULL, 'rt'},
 		{"pty", 	required_argument, NULL, 'pty'},
+		{"ptyn",         required_argument, NULL, 'ptyn'},
 		{"tp",		required_argument, NULL, 'tp'},
 		{"af", 		required_argument, NULL, 'af'},
 		{"ctl", 	required_argument, NULL, 'C'},
@@ -782,6 +789,9 @@ int main(int argc, char **argv) {
 				pty = atoi(optarg);
 				break;
 
+			case 'ptyn': //ptyn
+				ptyn = optarg;
+
 			case 'tp': //tp
                                 tp = atoi(optarg);
                                 break;
@@ -790,7 +800,7 @@ int main(int argc, char **argv) {
 				af_size++;
 				alternative_freq[af_size] = (int)(10*atof(optarg))-875;
 				if(alternative_freq[af_size] < 1 || alternative_freq[af_size] > 204)
-					fatal("Alternative Frequency has to be set in range of 87.6 Mhz - 107.9 Mhz\n");
+					fatal("Alternative Frequency has to be set in range of 87.6 Mhz - 107.9 MHz\n");
 				break;
 
 			case 'C': //ctl
@@ -860,12 +870,15 @@ int main(int argc, char **argv) {
 		best_divider = divc;
 	}
 	else if(!solution_count & !best_divider) {
-		fatal("No tuning solution found. You can specify the divider manually by setting the -div parameter.\n");
+		fatal("No tuning solution found. You can specify the divider manually by setting the --div parameter.\n");
 	}
 
-	printf("Carrier: %3.2f Mhz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (double)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
-	
-	int errcode = tx(carrier_freq, best_divider, audio_file, rds, pi, ps, rt, alternative_freq, ppm, deviation, mpx, cutoff, preemphasis_cutoff, control_pipe, pty, tp, power, gpio, wait, srate, nochan);
+	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (double)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
+
+	int errcode = tx(carrier_freq, best_divider, audio_file,
+			 rds, pi, ps, rt, alternative_freq,
+			 ppm, deviation, mpx, cutoff, preemphasis_cutoff,
+			 control_pipe, pty, tp, ptyn, power, gpio, wait, srate, nochan);
 
 	terminate(errcode);
 }
