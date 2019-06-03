@@ -22,6 +22,7 @@ extern void set_rds_rtp_tags(int rt_p_type_1, int rt_p_start_1, int rt_p_len_1,
                              int rt_p_type_2, int rt_p_start_2, int rt_p_len_2);
 extern void set_rds_ta(int ta);
 extern void set_rds_pty(int pty);
+extern void set_rds_ptyn_enable(int enable_ptyn);
 extern void set_rds_ptyn(char *ptyn);
 extern void set_rds_ptyn_dynamic(char *ptyn);
 extern void set_rds_af(int *af_array);

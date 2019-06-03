@@ -1,5 +1,5 @@
 CC = gcc
-STD_CFLAGS = -Wall -Wno-multichar -std=gnu99 -c -O1
+STD_CFLAGS = -Wall -Wno-multichar -std=gnu99 -c -O3
 
 # Enable ARM-specific options only on ARM, and compilation of the app only on ARM
 UNAME := $(shell uname -m)

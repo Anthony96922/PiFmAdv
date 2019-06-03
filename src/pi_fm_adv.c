@@ -379,7 +379,7 @@ static void *map_peripheral(uint32_t base, uint32_t len)
 int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	int rds, uint16_t pi, char *ps, char *rt, int *af_array,
 	float ppm, float deviation, float mpx, int cutoff, int preemphasis_cutoff,
-	char *control_pipe, int pty, int tp, char *ptyn, int power, int gpio, int wait,
+	char *control_pipe, int pty, int tp, int power, int gpio, int wait,
 	int srate, int nochan) {
 	// Catch only important signals
 	for (int i = 0; i < 25; i++) {
@@ -422,7 +422,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 
 	clk_reg[CM_PLLA] = 0x5A00022A; // Enable PLLA_PER
 	udelay(100);
-	
+
 	int ana[4];
 	for (int i = 3; i >= 0; i--)
 	{
@@ -562,6 +562,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	set_rds_ms(1);
 	set_rds_ab(0);
 	set_rds_ptyn(ptyn);
+	set_rds_ptyn_enable(enable_ptyn);
 
 	printf("RDS Options:\n");
 
@@ -632,7 +633,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 		}
 		last_cb = (uint32_t)mbox.virt_addr + last_sample * sizeof(dma_cb_t) * 2;
 
-		usleep(500);
+		usleep(10);
 	}
 
 	return 0;
@@ -649,16 +650,17 @@ int main(int argc, char **argv) {
 	int af_size = 0;
 	char *ps = "PiFmAdv";
 	char *rt = "PiFmAdv: Advanced FM transmitter for the Raspberry Pi";
-	char *ptyn = 0;
+	char *ptyn = "PiFmAdv";
+	int enable_ptyn = 0;
 	uint16_t pi = 0x1234;
 	float ppm = 0;
 	float deviation = 50;
 	int cutoff = 15000;
 	int preemphasis_cutoff = 3185;
-	int pty = 15;
+	int pty = 0;
 	int tp = 0;
 	int divc = 0;
-	int power = 7;
+	int power = 0;
 	int gpio = 4;
 	float mpx = 40;
 	int wait = 1;
@@ -791,6 +793,7 @@ int main(int argc, char **argv) {
 
 			case 'ptyn': //ptyn
 				ptyn = optarg;
+				enable_ptyn = 1;
 
 			case 'tp': //tp
                                 tp = atoi(optarg);

@@ -147,8 +147,14 @@ int poll_control_pipe() {
         }
         if (res[0] == 'P' && res[1] == 'T' && res[2] == 'Y' && res[3] == 'N') {
             arg[8] = 0;
-            set_rds_ptyn_dynamic(arg);
-            printf("PTYN set to: \"%s\"\n", arg);
+            if (strcmp(arg, "OFF") == 0) {
+                printf("PTYN disabled\n");
+                set_rds_ptyn_enable(0);
+            } else {
+                printf("PTYN set to: \"%s\"\n", arg);
+                set_rds_ptyn_enable(1);
+                set_rds_ptyn_dynamic(arg);
+            }
             return CONTROL_PIPE_PTYN_SET;
         }
     }
