@@ -234,7 +234,7 @@ int fm_mpx_get_samples(double *mpx_buffer, double *rds_buffer, float mpx, int rd
 			carrier_19[phase_19];
 
 			if (rds) {
-				mpx_buffer[i] += 2 * rds_buffer[i];
+				mpx_buffer[i] += rds_buffer[i];
 			}
 
 			phase_19++;
@@ -247,7 +247,7 @@ int fm_mpx_get_samples(double *mpx_buffer, double *rds_buffer, float mpx, int rd
 			(mpx-1) * out_mono;
 
 			if (rds) {
-				mpx_buffer[i] += 2 * rds_buffer[i];
+				mpx_buffer[i] += rds_buffer[i];
 			}
 		}
 		audio_pos++;

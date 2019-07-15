@@ -633,7 +633,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 		}
 		last_cb = (uint32_t)mbox.virt_addr + last_sample * sizeof(dma_cb_t) * 2;
 
-		usleep(10);
+		usleep(50);
 	}
 
 	return 0;

@@ -164,16 +164,18 @@ restart_rt:
 		rt_state = 0;
 		goto restart_rt;
 	}
+
 	blocks[1] |= 0x2000 | rds_params.ab << 4 | rt_state;
 	blocks[2] = rds_params.rt[rt_state*4+0] << 8 | rds_params.rt[rt_state*4+1];
 	blocks[3] = rds_params.rt[rt_state*4+2] << 8 | rds_params.rt[rt_state*4+3];
+
 	rt_state++;
 	if (rt_state == 16) rt_state = 0;
 	return 1;
 }
 
 /* ODA group (3A)
-*/
+ */
 int get_rds_oda_group(uint16_t *blocks) {
 	static int oda_state;
 
@@ -236,12 +238,12 @@ skip_group:
 		get_rds_oda_group(blocks);
 		break;
 	case 1: // Type 10A groups
-		if (!rds_params.enable_ptyn) {
+		if (!rds_params.enable_ptyn) { // Do not generate a 10A group if PTYN is off
 			state++;
 			goto skip_group;
-			break;
+		} else {
+			get_rds_ptyn_group(blocks);
 		}
-		get_rds_ptyn_group(blocks);
 		break;
 	case 2: // Type 11A groups
 		get_rds_rtp_group(blocks);
@@ -259,25 +261,28 @@ skip_group:
 */
 void get_rds_group(int *buffer) {
     static int state;
+    // Basic block data
     uint16_t blocks[GROUP_LENGTH] = {rds_params.pi, rds_params.tp << 10 | rds_params.pty << 5, 0, 0};
 
     // Generate block content
     if(!get_rds_ct_group(blocks)) { // CT (clock time) has priority on other group types
 	switch (state) {
 	case 0:
-	case 2: // Type 0A groups
-            get_rds_ps_group(blocks);
+	case 2:
+	case 4: // Type 0A groups
+	    get_rds_ps_group(blocks);
 	    break;
-	case 1: // Type 2A groups
-            get_rds_rt_group(blocks);
+	case 1:
+	case 3: // Type 2A groups
+	    get_rds_rt_group(blocks);
 	    break;
-	case 3: // Other groups
+	case 5: // Other groups
 	    get_rds_other_groups(blocks);
 	    break;
 	}
 
-        state++;
-        if(state == 4) state = 0;
+	state++;
+	if(state == 6) state = 0;
     }
 
     // Calculate the checkword for each block and emit the bits
@@ -363,7 +368,7 @@ void get_rds_samples(double *buffer, int count) {
         phase++;
         if(phase >= 4) phase = 0;
 
-        *buffer++ = sample;
+        *buffer++ = sample * 2;
         sample_count++;
     }
 }
@@ -375,13 +380,16 @@ void set_rds_pi(uint16_t pi_code) {
 void set_rds_rt(char *rt) {
     strncpy(rds_params.rt, rt, 64);
     int rt_len = strlen(rt);
-    rds_params.rt[rt_len] = 0x0D;
+    // Terminate RT with '\r' (carriage return) if RT is < 64 characters long
+    if (rt_len < 64)
+	rds_params.rt[rt_len] = '\r';
 }
 
 void set_rds_rt_dynamic(char *rt) {
     strncpy(rds_params.rt_dynamic, rt, 64);
     int rt_len = strlen(rt);
-    rds_params.rt_dynamic[rt_len] = 0x0D;
+    if (rt_len < 64)
+	rds_params.rt_dynamic[rt_len] = '\r';
     rds_params.rt_update = 1;
 }
 
