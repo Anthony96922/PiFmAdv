@@ -509,7 +509,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	cbp->next = mem_virt_to_phys(mbox.virt_addr);
 
 	// Here we define the rate at which we want to update the GPCLK control register
-	double srdivider = (((double)carrier_freq*divider/1e3)/(2*228*(1.+ppm/1.e6)));
+	float srdivider = (((float)carrier_freq*divider/1e3)/(2*228*(1.+ppm/1.e6)));
 	uint32_t idivider = (uint32_t)srdivider;
 	uint32_t fdivider = (uint32_t)((srdivider - idivider)*pow(2, 12));
 
@@ -545,8 +545,8 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	uint32_t last_cb = (uint32_t)ctl->cb;
 
 	// Data structures for baseband data
-	double data[DATA_SIZE];
-	double rds_buffer[DATA_SIZE];
+	float data[DATA_SIZE];
+	float rds_buffer[DATA_SIZE];
 	int data_len = 0;
 	int data_index = 0;
 
@@ -560,9 +560,6 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	set_rds_pty(pty);
 	set_rds_tp(tp);
 	set_rds_ms(1);
-	set_rds_ab(0);
-	set_rds_ptyn(ptyn);
-	set_rds_ptyn_enable(enable_ptyn);
 
 	printf("RDS Options:\n");
 
@@ -620,7 +617,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 				data_index = 0;
 			}
 
-			double dval = data[data_index]*deviation_scale_factor;
+			float dval = data[data_index]*deviation_scale_factor;
 			//int intval = ((int)(dval)); //((int)((dval)) & ~0x3);
 			data_index++;
 			data_len--;
@@ -650,8 +647,6 @@ int main(int argc, char **argv) {
 	int af_size = 0;
 	char *ps = "PiFmAdv";
 	char *rt = "PiFmAdv: Advanced FM transmitter for the Raspberry Pi";
-	char *ptyn = "PiFmAdv";
-	int enable_ptyn = 0;
 	uint16_t pi = 0x1234;
 	float ppm = 0;
 	float deviation = 50;
@@ -684,14 +679,13 @@ int main(int argc, char **argv) {
 		{"srate",	required_argument, NULL, 'S'},
 		{"nochan",	required_argument, NULL, 'N'},
 
-		{"rds", 	required_argument, NULL, 'rds'},
-		{"pi", 		required_argument, NULL, 'pi'},
-		{"ps", 		required_argument, NULL, 'ps'},
-		{"rt", 		required_argument, NULL, 'rt'},
-		{"pty", 	required_argument, NULL, 'pty'},
-		{"ptyn",         required_argument, NULL, 'ptyn'},
-		{"tp",		required_argument, NULL, 'tp'},
-		{"af", 		required_argument, NULL, 'af'},
+		{"rds", 	required_argument, NULL, 'R'},
+		{"pi", 		required_argument, NULL, 'i'},
+		{"ps", 		required_argument, NULL, 's'},
+		{"rt", 		required_argument, NULL, 'r'},
+		{"pty", 	required_argument, NULL, 'q'},
+		{"tp",		required_argument, NULL, 'T'},
+		{"af", 		required_argument, NULL, 'A'},
 		{"ctl", 	required_argument, NULL, 'C'},
 
 		{"help",	no_argument, NULL, 'h'},
@@ -771,35 +765,31 @@ int main(int argc, char **argv) {
 				nochan = atoi(optarg);
 				break;
 
-			case 'rds': //rds
+			case 'R': //rds
 				rds = atoi(optarg);
 				break;
 
-			case 'pi': //pi
+			case 'i': //pi
 				pi = (uint16_t) strtol(optarg, NULL, 16);
 				break;
 
-			case 'ps': //ps
+			case 's': //ps
 				ps = optarg;
 				break;
 
-			case 'rt': //rt
+			case 't': //rt
 				rt = optarg;
 				break;
 
-			case 'pty': //pty
+			case 'q': //pty
 				pty = atoi(optarg);
 				break;
 
-			case 'ptyn': //ptyn
-				ptyn = optarg;
-				enable_ptyn = 1;
-
-			case 'tp': //tp
+			case 'T': //tp
                                 tp = atoi(optarg);
                                 break;
 
-			case 'af': //af
+			case 'A': //af
 				af_size++;
 				alternative_freq[af_size] = (int)(10*atof(optarg))-875;
 				if(alternative_freq[af_size] < 1 || alternative_freq[af_size] > 204)
@@ -837,15 +827,15 @@ int main(int argc, char **argv) {
 	int divider, best_divider = 0;
 	int min_int_multiplier, max_int_multiplier;
 	int int_multiplier;
-	double frac_multiplier;
+	float frac_multiplier;
 	int fom, best_fom = 0;
 	int solution_count = 0;
 	for(divider = 2; divider < 50; divider += 1)
 	{
 		if(carrier_freq * divider > 1400e6) break;
 
-		max_int_multiplier=((int)((double)(carrier_freq + 10 + (deviation * 1000)) * divider * xtal_freq_recip));
-		min_int_multiplier=((int)((double)(carrier_freq - 10 - (deviation * 1000)) * divider * xtal_freq_recip));
+		max_int_multiplier=((int)((float)(carrier_freq + 10 + (deviation * 1000)) * divider * xtal_freq_recip));
+		min_int_multiplier=((int)((float)(carrier_freq - 10 - (deviation * 1000)) * divider * xtal_freq_recip));
 		if(min_int_multiplier != max_int_multiplier) continue;
 
 		solution_count++;
@@ -857,7 +847,7 @@ int main(int argc, char **argv) {
 		if(carrier_freq * divider >  800e6) fom++;
 		if(carrier_freq * divider < 1200e6) fom++;
 
-		frac_multiplier = ((double)(carrier_freq) * divider * xtal_freq_recip);
+		frac_multiplier = ((float)(carrier_freq) * divider * xtal_freq_recip);
 		int_multiplier = (int)frac_multiplier;
 		frac_multiplier = frac_multiplier - int_multiplier;
 		if((frac_multiplier > 0.2) && (frac_multiplier < 0.8)) fom++; // Prefer mulipliers away from integer boundaries
@@ -876,12 +866,12 @@ int main(int argc, char **argv) {
 		fatal("No tuning solution found. You can specify the divider manually by setting the --div parameter.\n");
 	}
 
-	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (double)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
+	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (float)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
 
 	int errcode = tx(carrier_freq, best_divider, audio_file,
 			 rds, pi, ps, rt, alternative_freq,
 			 ppm, deviation, mpx, cutoff, preemphasis_cutoff,
-			 control_pipe, pty, tp, ptyn, power, gpio, wait, srate, nochan);
+			 control_pipe, pty, tp, power, gpio, wait, srate, nochan);
 
 	terminate(errcode);
 }

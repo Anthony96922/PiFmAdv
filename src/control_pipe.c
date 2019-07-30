@@ -9,8 +9,6 @@
 #include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <unistd.h>
-#include <errno.h>
 
 #include "rds.h"
 #include "control_pipe.h"
@@ -54,13 +52,13 @@ int poll_control_pipe() {
         if(arg[strlen(arg)-1] == '\n') arg[strlen(arg)-1] = 0;
         if(res[0] == 'P' && res[1] == 'S') {
             arg[8] = 0;
-            set_rds_ps_dynamic(arg);
+            set_rds_ps(arg);
             printf("PS set to: \"%s\"\n", arg);
             return CONTROL_PIPE_PS_SET;
         }
         if(res[0] == 'R' && res[1] == 'T') {
             arg[64] = 0;
-            set_rds_rt_dynamic(arg);
+            set_rds_rt(arg);
             printf("RT set to: \"%s\"\n", arg);
             return CONTROL_PIPE_RT_SET;
         }
@@ -114,15 +112,15 @@ int poll_control_pipe() {
         }
         if (res[0] == 'R' && res[1] == 'T' && res[2] == 'P') {
             int type_1, start_1, len_1, type_2, start_2, len_2;
-            if (sscanf(arg, "%d,%d,%d,%d,%d,%d", &type_1, &start_1, &len_1, &type_2, &start_2, &len_2)) {
+            if (sscanf(arg, "%u,%u,%u,%u,%u,%u", &type_1, &start_1, &len_1, &type_2, &start_2, &len_2) == 6) {
                 if (type_1 > 63) type_1 = 0;
                 if (type_2 > 63) type_2 = 0;
                 if (start_1 > 64) start_1 = 0;
                 if (start_2 > 64) start_2 = 0;
                 if (len_1 > 64) len_1 = 1;
                 if (len_2 > 32) len_2 = 1;
-                printf("RT+ tag 1: type: %d, start: %d, length: %d\n", type_1, start_1, len_1);
-                printf("RT+ tag 2: type: %d, start: %d, length: %d\n", type_2, start_2, len_2);
+                printf("RT+ tag 1: type: %u, start: %u, length: %u\n", type_1, start_1, len_1);
+                printf("RT+ tag 2: type: %u, start: %u, length: %u\n", type_2, start_2, len_2);
                 set_rds_rtp_tags(type_1, start_1, len_1, type_2, start_2, len_2);
             } else {
                 printf("Could not parse RT+ tag info.\n");
@@ -135,10 +133,10 @@ int poll_control_pipe() {
         if(arg[strlen(arg)-1] == '\n') arg[strlen(arg)-1] = 0;
 	if (res[0] == 'R' && res[1] == 'T' && res[2] == 'P' && res[3] == 'F') {
             int toggle, running;
-            if (sscanf(arg, "%d,%d", &toggle, &running)) {
+            if (sscanf(arg, "%u,%u", &toggle, &running) == 2) {
                 if (toggle > 1) toggle = 0;
                 if (running > 1) running = 0;
-                printf("RT+ flags: toggle: %d, running: %d\n", toggle, running);
+                printf("RT+ flags: toggle: %u, running: %u\n", toggle, running);
                 set_rds_rtp_flags(toggle, running);
             } else {
                 printf("Could not parse RT+ flags.\n");
@@ -153,7 +151,7 @@ int poll_control_pipe() {
             } else {
                 printf("PTYN set to: \"%s\"\n", arg);
                 set_rds_ptyn_enable(1);
-                set_rds_ptyn_dynamic(arg);
+                set_rds_ptyn(arg);
             }
             return CONTROL_PIPE_PTYN_SET;
         }
