@@ -561,10 +561,8 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	set_rds_tp(tp);
 	set_rds_ms(1);
 
-	printf("RDS Options:\n");
-
 	if(rds) {
-		printf("RDS: %i, ", rds);
+		printf("RDS Options:\n");
 		printf("PI: %04X, PS: \"%s\", PTY: %i\n", pi, ps, pty);
 		printf("RT: \"%s\"\n", rt);
 		if(af_array[0]) {
@@ -572,13 +570,10 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 			printf("AF: ");
 			int f;
 			for(f = 1; f < af_array[0]+1; f++) {
-				printf("%f MHz ", (float)(af_array[f]+875)/10);
+				printf("%.1f MHz ", (float)(af_array[f]+875)/10);
 			}
 			printf("\n");
 		}
-	}
-	else {
-		printf("RDS: %i\n", rds);
 	}
 
 	// Initialize the control pipe reader
@@ -793,7 +788,7 @@ int main(int argc, char **argv) {
 				af_size++;
 				alternative_freq[af_size] = (int)(10*atof(optarg))-875;
 				if(alternative_freq[af_size] < 1 || alternative_freq[af_size] > 204)
-					fatal("Alternative Frequency has to be set in range of 87.6 Mhz - 107.9 MHz\n");
+					fatal("Alternative Frequency has to be set in range of 87.6 MHz - 107.9 MHz\n");
 				break;
 
 			case 'C': //ctl

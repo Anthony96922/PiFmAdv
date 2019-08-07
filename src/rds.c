@@ -388,13 +388,14 @@ void set_rds_rt(char *rt) {
 }
 
 void set_rds_ps(char *ps) {
+    int i;
     if (!ps_init) {
 	strncpy(rds_params.ps, ps, 8);
-	for(int i=0; i<8; i++) if(rds_params.ps[i] == 0) rds_params.ps[i] = 32;
+	for(i=0; i<8; i++) if(rds_params.ps[i] == 0) rds_params.ps[i] = 32;
 	ps_init = 1;
     } else {
 	strncpy(rds_params.ps_dynamic, ps, 8);
-	for(int i=0; i<8; i++) if(rds_params.ps_dynamic[i] == 0) rds_params.ps_dynamic[i] = 32;
+	for(i=0; i<8; i++) if(rds_params.ps_dynamic[i] == 0) rds_params.ps_dynamic[i] = 32;
 	ps_update = 1;
     }
 }
