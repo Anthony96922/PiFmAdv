@@ -442,7 +442,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 
 
 	// Adjust PLLA frequency
-	freq_ctl = (unsigned int)(((carrier_freq*divider)/CLOCK_BASE*((double)(1<<20))));
+	freq_ctl = (unsigned int)(((carrier_freq*divider)/CLOCK_BASE*((float)(1<<20))));
 	clk_reg[PLLA_CTRL] = (0x5a<<24) | (0x21<<12) | (freq_ctl>>20); // Integer part
 	freq_ctl&=0xFFFFF;
 	clk_reg[PLLA_FRAC] = (0x5a<<24) | (freq_ctl&0xFFFFC); // Fractional part
@@ -588,7 +588,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 
 	printf("Starting to transmit on %3.1f MHz.\n", carrier_freq/1e6);
 
-	double deviation_scale_factor =  0.1 * (divider*(deviation*1000)/(CLOCK_BASE/((double)(1<<20))));
+	float deviation_scale_factor =  0.1 * (divider*(deviation*1000)/(CLOCK_BASE/((float)(1<<20))));
 
 	for (;;) {
 
@@ -818,7 +818,7 @@ int main(int argc, char **argv) {
 
 	alternative_freq[0] = af_size;
 
-	double xtal_freq_recip=1.0/CLOCK_BASE;
+	float xtal_freq_recip=1.0/CLOCK_BASE;
 	int divider, best_divider = 0;
 	int min_int_multiplier, max_int_multiplier;
 	int int_multiplier;
