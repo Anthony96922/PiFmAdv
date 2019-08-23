@@ -20,8 +20,8 @@ size_t length;
 // coefficients of the low-pass FIR filter
 float low_pass_fir[FIR_HALF_SIZE];
 
-float carrier_19[] = {0, 0.5, 0.8660253882408142, 1, 0.8660253882408142, 0.5, 1.224646852585168e-16, -0.5, -0.8660253882408142, -1, -0.8660253882408142, -0.5};
-float carrier_38[] = {0, 0.8660253882408142, 0.8660253882408142, 1.224646852585168e-16, -0.8660253882408142, -0.8660253882408142};
+float carrier_19[] = {0, 0.5, 0.8660254, 1, 0.8660254, 0.5, 0, -0.5, -0.8660254, -1, -0.8660254, -0.5};
+float carrier_38[] = {0, 0.8660254, 0.8660254, 0, -0.8660254, -0.8660254};
 int phase_19 = 0;
 int phase_38 = 0;
 
@@ -61,16 +61,15 @@ int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_cor
 		// Open the input file
 		SF_INFO sfinfo;
 
-                if(filename[0] == '-' && srate > 0 && nochan > 0) {
-                        printf("Using stdin for raw audio input at %d Hz.\n",srate);
-        		sfinfo.samplerate = srate;
-        		sfinfo.format = SF_FORMAT_RAW | SF_FORMAT_PCM_16 | SF_ENDIAN_LITTLE;
-        		sfinfo.channels = nochan;
-        		sfinfo.frames = 0;
-                } 
-
 		// stdin or file on the filesystem?
 		if(filename[0] == '-') {
+			if (srate > 0 && nochan > 0) {
+				printf("Using stdin for raw audio input at %d Hz.\n", srate);
+				sfinfo.samplerate = srate;
+				sfinfo.format = SF_FORMAT_RAW | SF_FORMAT_PCM_16;
+				sfinfo.channels = nochan;
+				sfinfo.frames = 0;
+			}
 			if(!(inf = sf_open_fd(fileno(stdin), SFM_READ, &sfinfo, 0))) {
 				fprintf(stderr, "Error: could not open stdin for audio input.\n");
 				return -1;
@@ -262,6 +261,7 @@ int fm_mpx_close() {
 	}
 
 	if(audio_buffer != NULL) free(audio_buffer);
+	if(last_buffer_val != NULL) free(last_buffer_val);
 
 	return 0;
 }

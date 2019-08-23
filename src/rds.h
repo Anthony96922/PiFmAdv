@@ -8,7 +8,6 @@
 #ifndef RDS_H
 #define RDS_H
 
-
 #include <stdint.h>
 
 extern void get_rds_samples(float *buffer, int count);
@@ -26,6 +25,5 @@ extern void set_rds_af(int *af_array);
 extern void set_rds_tp(int tp);
 extern void set_rds_ms(int ms);
 extern void set_rds_ab(int ab);
-
 
 #endif /* RDS_H */
