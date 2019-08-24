@@ -256,9 +256,6 @@
 #define NUM_CBS                         (NUM_SAMPLES * 2)
 
 #define SUBSIZE                         1
-#define DATA_SIZE                       1000
-
-
 
 typedef struct {
     uint32_t info, src, dst, length, stride, next, pad[2];
@@ -472,12 +469,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 
 	int reg = gpio / 10;
 	int shift = (gpio % 10) * 3;
-	int mode;
-	if(gpio == 20) {
-		mode = 2;
-	} else {
-		mode = 4;
-	}
+	int mode = (gpio == 20) ? 2 : 4;
 
 	// GPIO needs to be ALT FUNC 0 to output the clock
 	gpio_reg[reg] = (gpio_reg[reg] & ~(7 << shift)) | (mode << shift);
@@ -546,12 +538,11 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 
 	// Data structures for baseband data
 	float data[DATA_SIZE];
-	float rds_buffer[DATA_SIZE];
 	int data_len = 0;
 	int data_index = 0;
 
 	// Initialize the baseband generator
-	if(fm_mpx_open(audio_file, DATA_SIZE, cutoff, preemphasis_cutoff, srate, nochan) < 0) return 1;
+	if(fm_mpx_open(audio_file, DATA_SIZE, cutoff, preemphasis_cutoff, mpx, rds, wait, srate, nochan) < 0) return 1;
 
 	// Initialize the RDS modulator
 	set_rds_pi(pi);
@@ -589,15 +580,18 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 	printf("Starting to transmit on %3.1f MHz.\n", carrier_freq/1e6);
 
 	float deviation_scale_factor =  0.1 * (divider*(deviation*1000)/(CLOCK_BASE/((float)(1<<20))));
+	uint32_t cur_cb = 0;
+	int last_sample = 0, this_sample = 0, free_slots = 0;
+	float dval;
 
 	for (;;) {
 
 		if(control_pipe) poll_control_pipe();
 
-		uint32_t cur_cb = (int)mem_phys_to_virt(dma_reg[DMA_CONBLK_AD]);
-		int last_sample = (last_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
-		int this_sample = (cur_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
-		int free_slots = this_sample - last_sample;
+		cur_cb = (int)mem_phys_to_virt(dma_reg[DMA_CONBLK_AD]);
+		last_sample = (last_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
+		this_sample = (cur_cb - (int)mbox.virt_addr) / (sizeof(dma_cb_t) * 2);
+		free_slots = this_sample - last_sample;
 
 		if (free_slots < 0)
 			free_slots += NUM_SAMPLES;
@@ -605,14 +599,14 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 		while (free_slots >= SUBSIZE) {
 			// Get more baseband samples if necessary
 			if(data_len == 0) {
-				if(fm_mpx_get_samples(data, rds_buffer, mpx, rds, wait) < 0 ) {
+				if(fm_mpx_get_samples(data) < 0 ) {
 					return 0;
 				}
 				data_len = DATA_SIZE;
 				data_index = 0;
 			}
 
-			float dval = data[data_index]*deviation_scale_factor;
+			dval = data[data_index]*deviation_scale_factor;
 			//int intval = ((int)(dval)); //((int)((dval)) & ~0x3);
 			data_index++;
 			data_len--;
@@ -625,14 +619,14 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file,
 		}
 		last_cb = (uint32_t)mbox.virt_addr + last_sample * sizeof(dma_cb_t) * 2;
 
-		usleep(50);
+		usleep(5000);
 	}
 
 	return 0;
 }
 
 int main(int argc, char **argv) {
-	int opt;
+	int opt = 0;
 
 	char *audio_file = NULL;
 	char *control_pipe = NULL;
@@ -652,7 +646,7 @@ int main(int argc, char **argv) {
 	int divc = 0;
 	int power = 0;
 	int gpio = 4;
-	float mpx = 40;
+	float mpx = 15;
 	int wait = 1;
 	int srate = 0;
 	int nochan = 0;
@@ -819,11 +813,11 @@ int main(int argc, char **argv) {
 	alternative_freq[0] = af_size;
 
 	float xtal_freq_recip=1.0/CLOCK_BASE;
-	int divider, best_divider = 0;
-	int min_int_multiplier, max_int_multiplier;
-	int int_multiplier;
+	int divider = 0, best_divider = 0;
+	int min_int_multiplier = 0, max_int_multiplier = 0;
+	int int_multiplier = 0;
 	float frac_multiplier;
-	int fom, best_fom = 0;
+	int fom = 0, best_fom = 0;
 	int solution_count = 0;
 	for(divider = 2; divider < 50; divider += 1)
 	{

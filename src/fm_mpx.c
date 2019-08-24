@@ -10,12 +10,13 @@
 #include <strings.h>
 #include <math.h>
 
+#include "fm_mpx.h"
 #include "rds.h"
 
 #define FIR_HALF_SIZE 30
 #define FIR_SIZE (2*FIR_HALF_SIZE-1)
 
-size_t length;
+size_t length = 0;
 
 // coefficients of the low-pass FIR filter
 float low_pass_fir[FIR_HALF_SIZE];
@@ -35,11 +36,16 @@ float audio_pos;
 float fir_buffer_mono[FIR_SIZE] = {0};
 float fir_buffer_stereo[FIR_SIZE] = {0};
 int fir_index = 0;
-int channels;
+int channels = 0;
 
 float *last_buffer_val;
 float preemphasis_prewarp;
 float preemphasis_coefficient;
+
+float rds_buffer[DATA_SIZE];
+int rds = 0;
+int wait = 0;
+int mpx = 0;
 
 SNDFILE *inf;
 
@@ -52,10 +58,11 @@ float *alloc_empty_buffer(size_t length) {
     return p;
 }
 
-
-
-int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_corner_freq, int srate, int nochan) {
+int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_corner_freq, float mpx_vol, int rds_on, int wait_for_audio, int srate, int nochan) {
 	length = len;
+	mpx = mpx_vol;
+	wait = wait_for_audio;
+	rds = rds_on;
 
 	if(filename != NULL) {
 		// Open the input file
@@ -135,7 +142,7 @@ int fm_mpx_open(char *filename, size_t len, int cutoff_freq, int preemphasis_cor
 
 // samples provided by this function are in 0..10: they need to be divided by
 // 10 after.
-int fm_mpx_get_samples(float *mpx_buffer, float *rds_buffer, float mpx, int rds, int wait) {
+int fm_mpx_get_samples(float *mpx_buffer) {
 	if(inf == NULL) {
 		if(rds) get_rds_samples(mpx_buffer, length);
 		return 0;
@@ -171,7 +178,7 @@ int fm_mpx_get_samples(float *mpx_buffer, float *rds_buffer, float mpx, int rds,
 						for(k=0; k<audio_len; k+=channels) {
 							for(l=0; l<channels; l++) {
 								tmp = audio_buffer[k+l];
-								audio_buffer[k+l] = audio_buffer[k+l] - preemphasis_coefficient*last_buffer_val[l];
+								audio_buffer[k+l] -= preemphasis_coefficient*last_buffer_val[l];
 								last_buffer_val[l] = tmp;
 							}
 						}
@@ -225,29 +232,21 @@ int fm_mpx_get_samples(float *mpx_buffer, float *rds_buffer, float mpx, int rds,
 		}
 		// End of FIR filter
 
-		if (channels>1) {
-			mpx_buffer[i] =
-			((mpx-2)/2) * out_mono +
-			((mpx-2)/2) * carrier_38[phase_38] * out_stereo +
-			carrier_19[phase_19];
+		mpx_buffer[i] = mpx * out_mono;
 
-			if (rds) {
-				mpx_buffer[i] += rds_buffer[i];
-			}
+		if (channels>1) {
+			mpx_buffer[i] +=
+			mpx * carrier_38[phase_38] * out_stereo +
+			carrier_19[phase_19];
 
 			phase_19++;
 			phase_38++;
 			if(phase_19 >= 12) phase_19 = 0;
 			if(phase_38 >= 6) phase_38 = 0;
 		}
-		else {
-			mpx_buffer[i] =
-			(mpx-1) * out_mono;
 
-			if (rds) {
-				mpx_buffer[i] += rds_buffer[i];
-			}
-		}
+		if (rds) mpx_buffer[i] += rds_buffer[i];
+
 		audio_pos++;
 	}
 
