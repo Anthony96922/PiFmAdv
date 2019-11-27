@@ -333,15 +333,6 @@ static void fatal(char *fmt, ...)
     terminate(0);
 }
 
-static void warn(char *fmt, ...)
-{
-    va_list ap;
-    fprintf(stderr,"WARNING: ");
-    va_start(ap, fmt);
-    vfprintf(stderr, fmt, ap);
-    va_end(ap);
-}
-
 static uint32_t mem_virt_to_phys(void *virt)
 {
     uint32_t offset = (uint8_t *)virt - mbox.virt_addr;
@@ -371,7 +362,7 @@ static void *map_peripheral(uint32_t base, uint32_t len)
 
 
 
-int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float deviation, int power, int gpio, int wait, int sample_rate, int num_chans) {
+int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float deviation, int power, int gpio, int sample_rate, int num_chans) {
 	// Catch only important signals
 	for (int i = 0; i < 25; i++) {
 		struct sigaction sa;
@@ -535,13 +526,13 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 	int data_index = 0;
 
 	// Initialize the baseband generator
-	if(fm_mpx_open(audio_file, DATA_SIZE, wait, sample_rate, num_chans) < 0) return 1;
+	if(fm_mpx_open(audio_file, DATA_SIZE, sample_rate, num_chans) < 0) return 1;
 
 	printf("Starting to transmit on %3.1f MHz.\n", carrier_freq/1e6);
 
 	float deviation_scale_factor = (divider*(deviation*1000)/(CLOCK_BASE/((float)(1<<20))));
-	uint32_t cur_cb = 0;
-	int last_sample = 0, this_sample = 0, free_slots = 0;
+	uint32_t cur_cb;
+	int last_sample, this_sample, free_slots;
 	float dval;
 
 	for (;;) {
@@ -556,15 +547,12 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 		while (free_slots >= SUBSIZE) {
 			// Get more baseband samples if necessary
 			if(data_len == 0) {
-				if(fm_mpx_get_samples(data) < 0 ) {
-					return 0;
-				}
+				if (fm_mpx_get_samples(data) < 0) return 0;
 				data_len = DATA_SIZE;
 				data_index = 0;
 			}
 
 			dval = data[data_index]*deviation_scale_factor;
-			//int intval = ((int)(dval)); //((int)((dval)) & ~0x3);
 			data_index++;
 			data_len--;
 
@@ -591,11 +579,10 @@ int main(int argc, char **argv) {
 	int divc = 0;
 	int power = 0;
 	int gpio = 4;
-	int wait = 1;
 	int sample_rate = 0;
 	int num_chans = 0;
 
-	const char    	*short_opt = "a:f:d:p:D:w:g:W:S:N:h";
+	const char    	*short_opt = "a:f:d:p:D:w:g:S:N:h";
 	struct option   long_opt[] =
 	{
 		{"audio", 	required_argument, NULL, 'a'},
@@ -605,7 +592,6 @@ int main(int argc, char **argv) {
 		{"div", 	required_argument, NULL, 'D'},
 		{"power", 	required_argument, NULL, 'w'},
 		{"gpio",	required_argument, NULL, 'g'},
-		{"wait",	required_argument, NULL, 'W'},
 		{"srate",	required_argument, NULL, 'S'},
 		{"nochan",	required_argument, NULL, 'N'},
 
@@ -624,7 +610,7 @@ int main(int argc, char **argv) {
 			case 'f': //freq
 				carrier_freq = 1e6 * atof(optarg);
 				if(carrier_freq < 76e6 || carrier_freq > 108e6)
-					warn("Frequency should be in megahertz between 76.0 and 108.0, but is %f MHz\n", atof(optarg));
+					fprintf(stderr, "Warning: Frequency should be in megahertz between 76.0 and 108.0, but is %f MHz\n", atof(optarg));
 				break;
 
 			case 'd': //dev
@@ -641,18 +627,18 @@ int main(int argc, char **argv) {
 
 			case 'w': //power
 				power = atoi(optarg);
-				if(power < 0 || power > 7)
-					fatal("Output power has to be set in range of 0 - 7\n");
+				if(power < 0 || power > 7) {
+					fprintf(stderr, "Output power has to be set in range of 0 - 7\n");
+					return 1;
+				}
 				break;
 
 			case 'g': //gpio
-                                gpio = atoi(optarg);
-                                if(gpio != 4 && gpio != 20 && gpio != 32) // && gpio != 34)
-                                        fatal("Available GPIO pins: 4,20,32\n");
-                                break;
-
-			case 'W': //wait
-				wait = atoi(optarg);
+				gpio = atoi(optarg);
+				if(gpio != 4 && gpio != 20 && gpio != 32) { // && gpio != 34)
+					fprintf(stderr, "Available GPIO pins: 4,20,32\n");
+					return 1;
+				}
 				break;
 
 			case 'S': //sample rate
@@ -664,37 +650,34 @@ int main(int argc, char **argv) {
 				break;
 
 			case 'h': //help
-				fatal("Help:\n"
-				      "Syntax: pi_fm_adv [--audio (-a) file] [--freq (-f) frequency] [--dev (-d) deviation]\n"
-				      "                  [--ppm (-p) ppm-error] [--div (-D) divider] [--power (-w) output-power]\n"
-				      "                  [--gpio (-g) gpio-pin] [--wait (-W) wait-switch] [--srate (-S) sample rate]\n"
-				      "                  [--nochan (N) number of channels]\n");
-
-				break;
-
-			case ':':
-				fatal("%s: option '-%c' requires an argument\n", argv[0], optopt);
+				fprintf(stderr, "Help: %s\n"
+				      "	[--audio (-a) file] [--freq (-f) frequency] [--dev (-d) deviation]\n"
+				      "	[--ppm (-p) ppm-error] [--div (-D) divider] [--power (-w) output-power]\n"
+				      "	[--gpio (-g) gpio-pin] [--srate (-S) sample rate]\n"
+				      "	[--nochan (N) number of channels]\n", argv[0]);
+				return 1;
 				break;
 
 			case '?':
-			default:
-				fatal("%s: option '-%c' is invalid. See -h (--help)\n", argv[0], optopt);
+				fprintf(stderr, "(See -h / --help)\n");
+				return 1;
 				break;
 		}
 	}
 
 	if (audio_file == NULL) {
-		fatal("No audio specified.\n");
+		fprintf(stderr, "No audio specified.\n");
+		return 1;
 	}
 
 	float xtal_freq_recip=1.0/CLOCK_BASE;
-	int divider = 0, best_divider = 0;
-	int min_int_multiplier = 0, max_int_multiplier = 0;
-	int int_multiplier = 0;
+	int divider, best_divider = 0;
+	int min_int_multiplier, max_int_multiplier;
+	int int_multiplier;
 	float frac_multiplier;
-	int fom = 0, best_fom = 0;
+	int fom, best_fom = 0;
 	int solution_count = 0;
-	for(divider = 2; divider < 50; divider += 1)
+	for(divider = 2; divider < 50; divider++)
 	{
 		if(carrier_freq * divider > 1400e6) break;
 
@@ -727,12 +710,12 @@ int main(int argc, char **argv) {
 		best_divider = divc;
 	}
 	else if(!solution_count & !best_divider) {
-		fatal("No tuning solution found. You can specify the divider manually by setting the --div parameter.\n");
+		fprintf(stderr, "No tuning solution found. You can specify the divider manually by setting the --div parameter.\n");
 	}
 
 	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (float)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
 
-	int errcode = tx(carrier_freq, best_divider, audio_file, ppm, deviation, power, gpio, wait, sample_rate, num_chans);
+	int errcode = tx(carrier_freq, best_divider, audio_file, ppm, deviation, power, gpio, sample_rate, num_chans);
 
 	terminate(errcode);
 }

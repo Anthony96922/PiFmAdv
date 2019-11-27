@@ -1,5 +1,5 @@
 CC = gcc
-STD_CFLAGS = -Wall -c -O2 -pedantic
+STD_CFLAGS = -Wall -O2 -pedantic
 
 # Enable ARM-specific options only on ARM, and compilation of the app only on ARM
 UNAME := $(shell uname -m)
@@ -14,16 +14,16 @@ else ifeq ($(UNAME), armv7l)
 	CFLAGS = $(STD_CFLAGS) -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4 -DRASPI=2
 	TARGET = pi2
 else ifeq ($(PCPUI), 11)
-        CFLAGS = $(STD_CFLAGS) -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4 -DRASPI=4
-        TARGET = pi4
+	CFLAGS = $(STD_CFLAGS) -mcpu=cortex-a7 -mfloat-abi=hard -mfpu=neon-vfpv4 -DRASPI=4
+	TARGET = pi4
 endif
 
 pi_fm_adv: pi_fm_adv.o fm_mpx.o mailbox.o
 	$(CC) -o pi_fm_adv mailbox.o pi_fm_adv.o fm_mpx.o -lm -lsndfile
 
-fm_mpx.o: fm_mpx.c fm_mpx.h
-mailbox.o: mailbox.c mailbox.h
-pi_fm_adv.o: pi_fm_adv.c fm_mpx.h mailbox.h
+fm_mpx.o: fm_mpx.h
+mailbox.o: mailbox.h
+pi_fm_adv.o: fm_mpx.h mailbox.h
 
 clean:
 	rm -f *.o
