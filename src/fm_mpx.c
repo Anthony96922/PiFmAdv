@@ -128,6 +128,7 @@ int fm_mpx_get_samples(float *mpx_buffer) {
 		}
 		audio_pos++;
 
+		// First store the current sample(s) into the FIR filter's ring buffer
 		if(channels == 2) {
 			// downmix stereo to mono
 			fir_buffer[fir_index] = (audio_buffer[audio_index] + audio_buffer[audio_index+1]) / 2;
