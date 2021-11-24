@@ -252,7 +252,6 @@
 
 #define NUM_SAMPLES			65536
 #define NUM_CBS				(NUM_SAMPLES * 2)
-#define DATA_SIZE			4096
 
 #define SUBSIZE                         1
 
@@ -287,19 +286,24 @@ static void udelay(int us)
     nanosleep(&ts, NULL);
 }
 
-static void terminate(int num)
-{
-    // Stop outputting and generating the clock.
+static int stop_tx;
+
+static void shutdown() {
+	stop_tx = 1;
+}
+
+static void cleanup() {
+	// Stop outputting and generating the clock.
     if (clk_reg && gpio_reg && mbox.virt_addr) {
         // Set GPIOs to be an output (instead of ALT FUNC 0, which is the clock).
         gpio_reg[0] = (gpio_reg[0] & ~(7 << 12)) | (1 << 12); //GPIO4
-	udelay(10);
-	gpio_reg[2] = (gpio_reg[2] & ~(7 << 0)) | (1 << 0); //GPIO20
-	udelay(10);
-	gpio_reg[3] = (gpio_reg[3] & ~(7 << 6)) | (1 << 6); //GPIO32
-	udelay(10);
-	//gpio_reg[3] = (gpio_reg[3] & ~(7 << 12)) | (1 << 12); //GPIO34 - Doesn't work on Pi 3, 3B+, Zero W
-	//udelay(10);
+        udelay(10);
+        gpio_reg[2] = (gpio_reg[2] & ~(7 << 0)) | (1 << 0); //GPIO20
+        udelay(10);
+        gpio_reg[3] = (gpio_reg[3] & ~(7 << 6)) | (1 << 6); //GPIO32
+        udelay(10);
+        //gpio_reg[3] = (gpio_reg[3] & ~(7 << 12)) | (1 << 12); //GPIO34 - Doesn't work on Pi 3, 3B+, Zero W
+        //udelay(10);
 
         // Disable the clock generator.
         clk_reg[GPCLK_CNTL] = 0x5A;
@@ -310,17 +314,17 @@ static void terminate(int num)
         udelay(10);
     }
 
-    fm_mpx_close();
-
     if (mbox.virt_addr != NULL) {
         unmapmem(mbox.virt_addr, NUM_PAGES * PAGE_SIZE);
         mem_unlock(mbox.handle, mbox.mem_ref);
         mem_free(mbox.handle, mbox.mem_ref);
     }
+}
 
+static void terminate()
+{
+    cleanup();
     printf("Terminating: cleanly deactivated the DMA engine and killed the carrier.\n");
-
-    exit(num);
 }
 
 static void fatal(char *fmt, ...)
@@ -330,7 +334,8 @@ static void fatal(char *fmt, ...)
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
-    terminate(0);
+    cleanup();
+    exit(0);
 }
 
 static uint32_t mem_virt_to_phys(void *virt)
@@ -362,14 +367,10 @@ static void *map_peripheral(uint32_t base, uint32_t len)
 
 
 
-int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float deviation, int power, int gpio, int sample_rate, int num_chans) {
+static int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, int deviation, int power, int gpio) {
 	// Catch only important signals
 	for (int i = 0; i < 25; i++) {
-		struct sigaction sa;
-
-		memset(&sa, 0, sizeof(sa));
-		sa.sa_handler = terminate;
-		sigaction(i, &sa, NULL);
+		signal(i, shutdown);
 	}
 
 	dma_reg = map_peripheral(DMA_VIRT_BASE, (DMA_CHANNEL_SIZE * (DMA_CHANNEL_MAX + 1)));
@@ -387,15 +388,15 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 		fatal("Failed to open mailbox. Check kernel support for vcio / BCM2708 mailbox.\n");
 	printf("Allocating physical memory: size = %d, ", NUM_PAGES * PAGE_SIZE);
 	if(!(mbox.mem_ref = mem_alloc(mbox.handle, NUM_PAGES * PAGE_SIZE, PAGE_SIZE, MEM_FLAG))) {
-		fatal("Could not allocate memory.\n");
+		fatal("\nCould not allocate memory.\n");
 	}
 	printf("mem_ref = %u, ", mbox.mem_ref);
 	if(!(mbox.bus_addr = mem_lock(mbox.handle, mbox.mem_ref))) {
-		fatal("Could not lock memory.\n");
+		fatal("\nCould not lock memory.\n");
 	}
 	printf("bus_addr = %x, ", mbox.bus_addr);
 	if(!(mbox.virt_addr = mapmem(BUS_TO_PHYS(mbox.bus_addr), NUM_PAGES * PAGE_SIZE))) {
-		fatal("Could not map memory.\n");
+		fatal("\nCould not map memory.\n");
 	}
 	printf("virt_addr = %p\n", mbox.virt_addr);
 
@@ -423,7 +424,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 	udelay(100);
 
 	// Adjust PLLA frequency
-	freq_ctl = (unsigned int)(((carrier_freq*divider)/CLOCK_BASE*((float)(1<<20))));
+	freq_ctl = (carrier_freq*divider)/CLOCK_BASE*(1<<20);
 	clk_reg[PLLA_CTRL] = (0x5a<<24) | (0x21<<12) | (freq_ctl>>20); // Integer part
 	freq_ctl&=0xFFFFF;
 	clk_reg[PLLA_FRAC] = (0x5a<<24) | (freq_ctl&0xFFFFC); // Fractional part
@@ -485,11 +486,11 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 	cbp->next = mem_virt_to_phys(mbox.virt_addr);
 
 	// Here we define the rate at which we want to update the GPCLK control register
-	float srdivider = (((float)carrier_freq*divider/1e3)/(2*192*(1.+ppm/1.e6)));
-	uint32_t idivider = (uint32_t)srdivider;
-	uint32_t fdivider = (uint32_t)((srdivider - idivider)*pow(2, 12));
+	uint32_t srdivider = (carrier_freq*divider/1e3)/(2*192);
+	uint32_t idivider = srdivider;
+	uint32_t fdivider = (srdivider - idivider)*pow(2, 12);
 
-	printf("PPM correction is %.4f, divider is %.4f (%d + %d*2^-12).\n", ppm, srdivider, idivider, fdivider);
+	printf("PPM correction is %.4f, divider is %4d (%d + %d*2^-12).\n", ppm, srdivider, idivider, fdivider);
 
 	pwm_reg[PWM_CTL] = 0;
 	udelay(100);
@@ -517,20 +518,21 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 	dma_reg[DMA_DEBUG] = 7; // clear debug error flags
 	dma_reg[DMA_CS] = BCM2708_DMA_PRIORITY(15) | BCM2708_DMA_PANIC_PRIORITY(15) | BCM2708_DMA_DISDEBUG | BCM2708_DMA_ACTIVE;
 
-
 	uint32_t last_cb = (uint32_t)ctl->cb;
 
 	// Data structures for baseband data
-	float data[DATA_SIZE];
+	float data[DATA_SIZE*16];
 	int data_len = 0;
 	int data_index = 0;
 
 	// Initialize the baseband generator
-	if(fm_mpx_open(audio_file, DATA_SIZE, sample_rate, num_chans) < 0) return 1;
+	if(fm_mpx_open(audio_file, ppm) < 0) {
+		goto exit;
+	}
 
 	printf("Starting to transmit on %3.1f MHz.\n", carrier_freq/1e6);
 
-	float deviation_scale_factor = (divider*(deviation*1000)/(CLOCK_BASE/((float)(1<<20))));
+	float deviation_scale_factor = (divider*(deviation*1000)/(CLOCK_BASE/(1<<20)));
 	uint32_t cur_cb;
 	int last_sample, this_sample, free_slots;
 	float dval;
@@ -547,8 +549,7 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 		while (free_slots >= SUBSIZE) {
 			// Get more baseband samples if necessary
 			if(data_len == 0) {
-				if (fm_mpx_get_samples(data) < 0) return 0;
-				data_len = DATA_SIZE;
+				if ((data_len = fm_mpx_get_samples(data)) < 0) break;
 				data_index = 0;
 			}
 
@@ -565,7 +566,13 @@ int tx(uint32_t carrier_freq, int divider, char *audio_file, float ppm, float de
 		last_cb = (uint32_t)mbox.virt_addr + last_sample * sizeof(dma_cb_t) * 2;
 
 		usleep(5000);
+
+		if (stop_tx) break;
 	}
+
+exit:
+	fm_mpx_close();
+	terminate();
 
 	return 0;
 }
@@ -574,15 +581,13 @@ int main(int argc, char **argv) {
 	int opt = 0;
 	char *audio_file = NULL;
 	uint32_t carrier_freq = 87600000;
-	float ppm = 0;
-	float deviation = 75;
+	float ppm = 0.0;
+	int deviation = 75;
 	int divc = 0;
 	int power = 0;
 	int gpio = 4;
-	int sample_rate = 0;
-	int num_chans = 0;
 
-	const char    	*short_opt = "a:f:d:p:D:w:g:S:N:h";
+	const char    	*short_opt = "a:rf:d:p:D:w:g:h";
 	struct option   long_opt[] =
 	{
 		{"audio", 	required_argument, NULL, 'a'},
@@ -592,8 +597,6 @@ int main(int argc, char **argv) {
 		{"div", 	required_argument, NULL, 'D'},
 		{"power", 	required_argument, NULL, 'w'},
 		{"gpio",	required_argument, NULL, 'g'},
-		{"srate",	required_argument, NULL, 'S'},
-		{"nochan",	required_argument, NULL, 'N'},
 
 		{"help",	no_argument, NULL, 'h'},
 		{ 0, 		0, 		   0,    0 }
@@ -614,7 +617,7 @@ int main(int argc, char **argv) {
 				break;
 
 			case 'd': //dev
-				deviation = atof(optarg);
+				deviation = atoi(optarg);
 				break;
 
 			case 'p': //ppm
@@ -641,24 +644,19 @@ int main(int argc, char **argv) {
 				}
 				break;
 
-			case 'S': //sample rate
-				sample_rate = atoi(optarg);
-				break;
-
-			case 'N': //number of channels
-				num_chans = atoi(optarg);
-				break;
-
 			case 'h': //help
-				fprintf(stderr, "Help: %s\n"
-				      "	[--audio (-a) file] [--freq (-f) frequency] [--dev (-d) deviation]\n"
-				      "	[--ppm (-p) ppm-error] [--div (-D) divider] [--power (-w) output-power]\n"
-				      "	[--gpio (-g) gpio-pin] [--srate (-S) sample rate]\n"
-				      "	[--nochan (N) number of channels]\n", argv[0]);
+				fprintf(stderr, "Usage: %s --audio (-a) file\n"
+				      "	[--freq (-f) frequency]\n"
+				      "	[--dev (-d) deviation]\n"
+				      "	[--ppm (-p) ppm-error]\n"
+				      "	[--div (-D) divider]\n"
+				      "	[--power (-w) output-power]\n"
+				      "	[--gpio (-g) gpio-pin]\n", argv[0]);
 				return 1;
 				break;
 
 			case '?':
+			default:
 				fprintf(stderr, "(See -h / --help)\n");
 				return 1;
 				break;
@@ -715,7 +713,5 @@ int main(int argc, char **argv) {
 
 	printf("Carrier: %3.2f MHz, VCO: %4.1f MHz, Multiplier: %f, Divider: %d\n", carrier_freq/1e6, (float)carrier_freq * best_divider / 1e6, carrier_freq * best_divider * xtal_freq_recip, best_divider);
 
-	int errcode = tx(carrier_freq, best_divider, audio_file, ppm, deviation, power, gpio, sample_rate, num_chans);
-
-	terminate(errcode);
+	return tx(carrier_freq, best_divider, audio_file, ppm, deviation, power, gpio);
 }
